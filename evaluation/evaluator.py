@@ -4,210 +4,158 @@ from pathlib import Path
 
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
+import httpx
 
-from app.schemas.question import RetrievalMode, QuestionRequest
+from deepeval import evaluate
 
-from app.schemas.document import RetrievedContextResponse
+from deepeval.metrics import ContextualPrecisionMetric, ContextualRecallMetric
 
-from app.routers.question import answer_question
+from deepeval.test_case import LLMTestCase
 
-import types
+from evaluation.judge import judge
 
-import sys
-
-
-dummy_module = types.ModuleType("langchain_community.chat_models.vertexai")
-
-dummy_module.ChatVertexAI = None
-
-sys.modules["langchain_community.chat_models.vertexai"] = dummy_module
+from evaluation.metrics import mean_reciprocal_rank, recall_at_k, reciprocal_rank, mean_recall_k
 
 
-from ragas import SingleTurnSample, EvaluationDataset, evaluate
-
-from openai import OpenAI
-
-from ragas.llms import llm_factory
-
-from ragas.metrics import Faithfulness, LLMContextPrecisionWithReference, LLMContextRecall
-
-from app.core.config import settings
-
-from evaluation.metrics import mean_reciprocal_ranks, recall_at_k, reciprocal_rank
+API_ENDPOINT = "http://localhost:8000/question/search"
 
 
-
-EvaluationItem = dict[str, Any]
-
-
-client = OpenAI(
-    api_key=settings.ai_credits_api_key,
-    base_url="https://aicredits.in/v1",
-)
-
-
-evaluator_llm = llm_factory(
-    model=settings.ai_credits_model,
-    provider="openai",
-    client=client,
-    temperature=0.0,
-)
-
-
-def load_dataset(
-    path: str = "evaluation/dataset.json",
-) -> list[EvaluationItem]:
+def load_dataset(path: str = "evaluation/dataset.json") -> list[dict[str, Any]]:
     dataset_path = Path(path)
 
     if not dataset_path.exists():
-        raise FileNotFoundError(f"dataset not found {path}")
+        raise FileNotFoundError(f"Evaluation dataset not found at {path}.")
 
-    with dataset_path.open("r", encoding="utf-8") as file:
-        return json.load(file)
-
-
-def build_relevant_children(
-    item: EvaluationItem,
-) -> set[tuple[int, int, int]]:
-    return {
-        (
-            child["page_number"],
-            child["parent_index"],
-            child["child_index"]
-        )for child in item["relevant_children"]
-    }
+    with dataset_path.open("r", encoding="utf-8") as reader:
+        return json.load(reader)
 
 
-def build_retrieved_children(
-    contexts: list[RetrievedContextResponse],
-) -> list[tuple[int, int, int]]:
-    return [
-        (
-            context.page_number,
-            context.parent_index,
-            context.child_index,
-        )for context in contexts
-    ]
-
-
-# Evaluate Retrieval: Runs the retrieval from pipeline itself and evaluates the questions.
-
-async def evaluate_retrieval(
-    db: AsyncSession,
+def evaluate_groundforge(
     top_k: int = 5,
-    retrieval_mode: RetrievalMode = RetrievalMode.hybrid,
-) -> EvaluationItem:
+    document_id: int | None = None,
+) -> dict[str, Any]:
     dataset = load_dataset()
 
-    question_results: list[EvaluationItem] = []
-    reciprocal_ranks: list[float] = []
+    test_cases: list[LLMTestCase] = []
+
+    question_results: list[dict[str, Any]] = []
+
     recall_scores: list[float] = []
-    samples: list[SingleTurnSample] = []
 
-    for item in dataset:
-        request = QuestionRequest(
-            question=item["question"],
-            top_k=top_k,
-            retrieval_mode=retrieval_mode,
-        )
+    reciprocal_ranks: list[float] = []
 
-        response = await answer_question(request=request, db=db)
+    with httpx.Client(timeout=30.0) as client:
+        for item in dataset:
+            question = item["question"]
 
-        sample = SingleTurnSample(
-            user_input=response.question,
-            retrieved_contexts=[
-                context.parent_text
-                for context in response.used_contexts
-            ],
-            response=response.answer,
-            reference=item["reference_answer"],
-        )
+            expected_answer = item["reference_answer"]
 
-        samples.append(sample)
+            relevant_chunks = set(item["relevant_chunks"])
 
-        relevant_children = build_relevant_children(item)
+            payload: dict[str, Any] = {"query": question, "top_k": top_k}
+            
+            if document_id is not None:
+                payload["document_id"] = document_id
 
-        retrieved_children = build_retrieved_children(response.used_contexts)
+            response = client.post(API_ENDPOINT, json=payload)
+            
+            response.raise_for_status()
+            
+            data = response.json()
 
-        recall = recall_at_k(
-            relevant_items=relevant_children,
-            retrieved_items=retrieved_children,
-            k=top_k,
-        )
+            retrieved_chunks = data.get("results", [])
+            
+            retrieved_texts = [str(chunk["text"]) for chunk in retrieved_chunks]            
 
-        rr = reciprocal_rank(
-            relevant_items=relevant_children,
-            retrieved_items=retrieved_children,
-        )
+            retrieved_chunk_indexes = [int(chunk["chunk_index"]) for chunk in retrieved_chunks]
 
-        recall_scores.append(recall)
-        reciprocal_ranks.append(rr)
+            recall_k = recall_at_k(
+                relevant_chunks=relevant_chunks,
+                retrieved_chunks=retrieved_chunk_indexes,
+                k=top_k,
+            )
+            
+            reciprocal_r = reciprocal_rank(
+                relevant_chunks=relevant_chunks,
+                retrieved_chunks=retrieved_chunk_indexes,
+            )
 
-        question_results.append(
-            {
-                "id": item["id"],
-                "question": item["question"],
-                "answer": response.answer,
-                "used_contexts": [
-                    context.parent_text
-                    for context in response.used_contexts
-                ],
-                "relevant_children": list(relevant_children),
-                "retrieved_children": retrieved_children,
-                "recall_at_k": recall,
-                "reciprocal_rank": rr
-            }
-        )
+            recall_scores.append(recall_k)
+            
+            reciprocal_ranks.append(reciprocal_r)
 
-    average_recall = (
-        sum(recall_scores) / len(recall_scores)
-        if recall_scores
-        else 0.0
+            test_case = LLMTestCase(
+                input=question,
+                actual_output=expected_answer,
+                expected_output=expected_answer,
+                retrieval_context=retrieved_texts,
+            )
+
+            test_cases.append(test_case)
+
+            question_results.append(
+                {
+                    "id": item["id"],
+                    "question": question,
+                    "chunk_indexes": retrieved_chunk_indexes,
+                    "top_rerank_score": retrieved_chunks[0]["rerank_score"] if retrieved_chunks else 0.0,
+                    "recall_at_k": recall_k,
+                    "reciprocal_rank": reciprocal_r,
+                }
+            )
+
+    context_recall_metric = ContextualRecallMetric(
+        threshold=0.7,
+        model=judge,
+        include_reason=False,
+        async_mode=False,
     )
 
-    mrr = mean_reciprocal_ranks(reciprocal_ranks)
+    context_precision_metric = ContextualPrecisionMetric(
+        threshold=0.7,
+        model=judge,
+        include_reason=False,
+        async_mode=False,
+    )
 
-    faithfulness = Faithfulness(llm=evaluator_llm)
-
-    context_precision = LLMContextPrecisionWithReference(llm=evaluator_llm)
-
-    context_recall = LLMContextRecall(llm=evaluator_llm)
-
-    eval_dataset = EvaluationDataset(samples=samples)
-
-    result = evaluate(
-        dataset=eval_dataset,
+    eval_results = evaluate(
+        test_cases=test_cases,
         metrics=[
-            faithfulness,
-            context_precision,
-            context_recall,
-        ]
+            context_recall_metric,
+            context_precision_metric,
+        ],
     )
 
-    ragas_df = result.to_pandas()
+    deepeval_metrics = []
+    
+    for test_result in eval_results.test_results:
+        metrics_dict = {test.name: test.score for test in test_result.metrics_data}
+    
+        deepeval_metrics.append(metrics_dict)
 
-    for question_result, (_, row) in zip(question_results, ragas_df.iterrows()):
-        question_result["ragas"] = {
-            "faithfulness": float(row["faithfulness"]),
-            "context_precision": float(row["llm_context_precision_with_reference"]),
-            "context_recall": float(row["context_recall"])
-        }
+    total_evals = len(deepeval_metrics) if deepeval_metrics else 1
+    
+    avg_context_recall = sum(
+        metric.get("Contextual Recall", 0.0) for metric in deepeval_metrics
+    ) / total_evals
 
-    scores = {
-        "average_faithfulness": float(ragas_df["faithfulness"].mean()),
-        "average_context_precision": float(ragas_df["llm_context_precision_with_reference"].mean()),
-        "average_context_recall": float(ragas_df["context_recall"].mean())
-    }
+    avg_context_precision = sum(
+        metric.get("Contextual Precision", 0.0) for metric in deepeval_metrics
+    ) / total_evals
+
+    mrr = mean_reciprocal_rank(reciprocal_ranks)
+
+    mrk = mean_recall_k(recall_scores)
 
     return {
-        "questions_evaluated": len(dataset),
-        "retrieval_mode": retrieval_mode.value,
-        "top_k": top_k,
-
-        "average_recall_at_k": average_recall,
-        "mean_reciprocal_rank": mrr,
-
-        "results": question_results,
-        "ragas_evaluation": scores
+        "questions": len(dataset),
+        "metrics": {
+            "MRR": round(mrr, 4),
+            "Average Recall At K": round(mrk, 4),
+        },
+        "deepeval_metrics": {
+            "average_context_recall": round(avg_context_recall, 4),
+            "average_context_precision": round(avg_context_precision, 4),
+        },
+        "details": question_results,
     }

@@ -1,20 +1,18 @@
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from sqlalchemy import String, Integer, DateTime, func
+from datetime import datetime
 
 from typing import TYPE_CHECKING
 
-from datetime import datetime
+from sqlalchemy import String, Integer, DateTime, func
+
+from sqlalchemy.orm import relationship, mapped_column, Mapped
 
 from app.core.database import Base
 
-
 if TYPE_CHECKING:
-    from app.models.parentchunks import ParentChunks
+    from app.models.chunks import Chunks
 
 
 class Document(Base):
-
     __tablename__ = "document"
 
     id: Mapped[int] = mapped_column(
@@ -31,12 +29,7 @@ class Document(Base):
     category: Mapped[str] = mapped_column(
         String,
         nullable=False,
-    )
-
-    status: Mapped[str] = mapped_column(
-        String,
-        nullable=False,
-        server_default="queued",
+        index=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(
@@ -45,7 +38,8 @@ class Document(Base):
         nullable=False,
     )
 
-    parent_chunks: Mapped[list["ParentChunks"]] = relationship(
+    chunks: Mapped[list["Chunks"]] = relationship(
+        "Chunks",
         back_populates="document",
         cascade="all, delete-orphan",
         passive_deletes=True,

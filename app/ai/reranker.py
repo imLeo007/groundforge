@@ -22,7 +22,7 @@ def load_reranker() -> CrossEncoder:
         backend="onnx",
         activation_fn=torch.nn.Sigmoid(),
         model_kwargs={
-            "file_name": "onnx/model_qint8_arm64.onnx",
+            "file_name": settings.onnx_filename,
             "provider": "CPUExecutionProvider",
         },
     )

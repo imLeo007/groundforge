@@ -6,29 +6,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
 
     database_url: str
-    
-    redis_broker: str
-    redis_backend: str
-
-    compress_model: str
 
     embedding_model: str
-    embedding_dimension: int
+    reranker_model: str
+    onnx_filename: str
 
-    rerank_candidate_k: int
-    reranker_model_name: str
-
-    gemini_api_key: str
-    gemini_model: str
-
-    groq_api_key: str
-    groq_model: str
-
-    openrouter_api_key: str
-    openrouter_model: str
-
-    ai_credits_api_key: str
-    ai_credits_model: str
+    openai_api_key: str
+    openai_model: str
 
     model_config = SettingsConfigDict(
         env_file=".env",

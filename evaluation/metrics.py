@@ -1,52 +1,38 @@
-
-
-# Recall at k: the ratio of retrieved items in relevant items.
-
 def recall_at_k(
-    relevant_items: set[tuple[int, int, int]],
-    retrieved_items: list[tuple[int, int, int]],
-    k: int,
+    relevant_chunks: set[int],
+    retrieved_chunks: list[int],
 ) -> float:
-    if k <= 0:
-        raise ValueError("top_k must be greater than zero")
-
-    if not relevant_items:
+    if not relevant_chunks:
         return 0.0
+    
+    hits = retrieved_chunks.intersection(relevant_chunks)
 
-    retrieved_top_k = retrieved_items[:k]
+    return len(hits) / len(relevant_chunks)
 
-    retrieved_relevant = {
-        item
-        for item in retrieved_top_k
-        if item in relevant_items
-    }
-
-    return len(retrieved_relevant) / len(relevant_items)
-
-
-# Reciprocal Rank: How high the first item in retrieved items was ranked?.
 
 def reciprocal_rank(
-    relevant_items: set[tuple[int, int, int]],
-    retrieved_items: list[tuple[int, int, int]],
+    relevant_chunks: set[int],
+    retrieved_chunks: list[int],
 ) -> float:
-    if not relevant_items:
+    if not relevant_chunks:
         return 0.0
 
-    for rank, item in enumerate(retrieved_items, start=1):
-        if item in relevant_items:
-
-            return 1.0 /rank
+    for rank, chunk_idx in enumerate(retrieved_chunks, start=1):
+        if chunk_idx in relevant_chunks:
+            return 1.0 / rank
 
     return 0.0
 
 
-# Mean for reciprocal ranks: avg.
-
-def mean_reciprocal_ranks(
-    reciprocal_ranks: list[float]
-) -> float:
+def mean_reciprocal_rank(reciprocal_ranks: list[float]) -> float:
     if not reciprocal_ranks:
         return 0.0
 
     return sum(reciprocal_ranks) / len(reciprocal_ranks)
+
+
+def mean_recall_k(recall_k: list[float]) -> float:
+    if not recall_k:
+        return 0.0
+
+    return sum(recall_k)/len(recall_k)

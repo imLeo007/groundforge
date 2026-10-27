@@ -1,164 +1,105 @@
 from typing import Any
 
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 
-from sqlalchemy import func, select
+from sqlalchemy import select, insert
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sqlalchemy.orm import selectinload
-
 from app.models.document import Document
 
-from app.ai.chunker import ChildChunk, ParentChunk
+from app.models.chunks import Chunks
 
-from app.models.childchunks import ChildChunks
-
-from app.models.parentchunks import ParentChunks
+from app.schemas.retriever import RetrievedChunks
 
 
+async def save_document_with_chunks(
+    db: AsyncSession,
+    filename: str,
+    category: str,
+    chunks: list[RetrievedChunks],
+    embeddings: Any,
+) -> Document:
+    if len(chunks) != len(embeddings):
+        raise ValueError("Chunks and embeddings length mismatch.")
 
-async def create_document(db: AsyncSession, filename: str, category: str) -> Document:
-    document = Document(
-        filename=filename,
-        category=category,
-        status="queued"
-    )
+    document = Document(filename=filename, category=category)
 
     db.add(document)
 
-    await db.commit()
-
-    await db.refresh(document)
-
-    return document
-
-
-# Save Document Chunks: Saves both Parent & Child chunks into db given by Hybrid Chunker.
-
-
-async def save_document_chunks(
-    db: AsyncSession,
-    document: Document,
-    parent_chunks: list[ParentChunk],
-    child_chunks: list[ChildChunk],
-    child_embeddings: Any,
-) -> Document:
-    if len(child_chunks) != len(child_embeddings):
-        raise ValueError("The number of chunks must be equal to number of embeddings")
-
-    parent_models: list[ParentChunks] = []
-
-    for parent_chunk in parent_chunks:
-        parent_model = ParentChunks(
-            document_id=document.id,
-            text=parent_chunk["text"],
-            heading=parent_chunk["heading"],
-            page_number=parent_chunk["page_number"],
-            parent_index=parent_chunk["parent_index"],
-        )
-
-        parent_models.append(parent_model)
-
-    db.add_all(parent_models)
-
     await db.flush()
 
-    parent_lookup: dict[tuple[int, int], ParentChunks] = {
-        (
-            parent.page_number,
-            parent.parent_index,
-        ): parent
-        for parent in parent_models
-    }
+    if not chunks:
+        await db.commit()
 
-    child_models: list[ChildChunks] = []
+        return document
 
-    for child_chunk, embedding in zip(child_chunks, child_embeddings, strict=True):
-        parent_key = (
-            child_chunk["page_number"],
-            child_chunk["parent_index"],
-        )
+    chunk_records = [
+        {
+            "document_id": document.id,
+            "chunk_index": idx,
+            "page_no": chunk.get("page_no"),
+            "headings": chunk.get("headings"),
+            "text": chunk["text"],
+            "embeddings": embedding,
+        }
+        for idx, (chunk, embedding) in enumerate(zip(chunks, embeddings), start=1)
+    ]
 
-        parent = parent_lookup.get(parent_key)
-
-        if parent is None:
-            raise ValueError("A child chunk not matched to it's parent chunk")
-
-        child_model = ChildChunks(
-            parent_id=parent.id,
-            text=child_chunk["text"],
-            child_index=child_chunk["child_index"],
-            embeddings=embedding,
-        )
-
-        child_models.append(child_model)
-
-    db.add_all(child_models)
-
-    document.status = "ready"
+    await db.execute(insert(Chunks).values(chunk_records))
 
     await db.commit()
-
+    
     await db.refresh(document)
-
+    
     return document
 
 
-
-async def get_all_documents(db: AsyncSession) -> list[Document]:
-    result = await db.execute(select(Document))
-
-    return result.scalars().all()
-
-
-
-async def get_document_by_id(document_id: int, db: AsyncSession) -> Document:
-
+async def get_document_by_id(db: AsyncSession, document_id: int) -> Document:
     result = await db.execute(
-        select(Document).options(
-            selectinload(Document.parent_chunks).selectinload(ParentChunks.child_chunks)
-        ).where(Document.id == document_id)
+        select(Document).where(Document.id == document_id)
     )
-
+    
     document = result.scalar_one_or_none()
 
     if document is None:
-        raise HTTPException(status_code=404, detail="Document was not found")
-
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document with ID {document_id} was not found.",
+        )
     return document
 
 
+async def get_all_documents(db: AsyncSession) -> list[Document]:
+    stmt = select(Document).order_by(Document.created_at.desc())
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
 
-async def get_document_stats(document_id: int, db: AsyncSession) -> tuple[int, int]:
 
-    parent_chunk_result = await db.execute(
-            select(func.count(ParentChunks.id)
-        ).where(ParentChunks.document_id == document_id)
+async def get_document_chunks(
+    db: AsyncSession, 
+    document_id: int
+) -> list[Chunks]:
+    
+    chunks = (
+        select(Chunks)
+        .where(Chunks.document_id == document_id)
+        .order_by(Chunks.chunk_index.asc())
     )
 
-    child_chunks = await db.execute(
-        select(func.count(ChildChunks.id))
-        .join(ParentChunks, ParentChunks.id == ChildChunks.parent_id)
-        .where(ParentChunks.document_id == document_id)
-    )
+    result = await db.execute(chunks)
 
-    total_parent = int(parent_chunk_result.scalar_one())
-
-    total_child = int(child_chunks.scalar_one())
-
-    return total_parent, total_child
+    return list(result.scalars().all())
 
 
-
-async def delete_document(db: AsyncSession, document_id: int) -> dict[str, int | str]:
-    document = await get_document_by_id(db=db, document_id=document_id)
+async def delete_document(db: AsyncSession, document_id: int) -> dict[str, Any]:
+    document = await get_document_by_id(db, document_id)
 
     await db.delete(document)
 
     await db.commit()
 
     return {
-        "message": "Document was deleted",
-        "document_id": document_id
+        "message": "Document and associated chunks successfully deleted.",
+        "document_id": document_id,
     }

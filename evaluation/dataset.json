@@ -3,48 +3,126 @@
     "id": "typewriter_1868",
     "question": "Who patented the typewriter in 1868, and what advantage did it provide over handwriting?",
     "reference_answer": "Christopher Latham Sholes patented the typewriter in 1868. It enabled people to produce legible, professional documents more efficiently than handwriting.",
-    "relevant_children": [
-      {
-        "page_number": 1,
-        "parent_index": 2,
-        "child_index": 1
-      }
-    ]
+    "relevant_chunks": [1]
+  },
+  {
+    "id": "ibm_1935_electric_typewriter",
+    "question": "What technological advancement did IBM introduce in 1935 to improve document creation?",
+    "reference_answer": "IBM introduced the electric typewriter in 1935, improving the speed and convenience of document creation.",
+    "relevant_chunks": [1]
   },
   {
     "id": "ibm_mt_st",
     "question": "How did the IBM MT/ST improve word processing compared with traditional typewriters?",
     "reference_answer": "The IBM MT/ST combined an IBM Selectric typewriter with magnetic tape storage, allowing users to record, edit, and replay typed content and make revisions without retyping entire documents.",
-    "relevant_children": [
-      {
-        "page_number": 1,
-        "parent_index": 3,
-        "child_index": 1
-      }
-    ]
+    "relevant_chunks": [1]
+  },
+  {
+    "id": "wang_laboratories_1200",
+    "question": "What features made Wang Laboratories' dedicated word processors revolutionary in the 1970s?",
+    "reference_answer": "Wang introduced dedicated word processing machines such as the Wang 1200 that featured small screens and floppy disks, allowing secretarial pools to make revisions without retyping full documents.",
+    "relevant_chunks": [1]
   },
   {
     "id": "wordstar_vs_microsoft_word",
     "question": "How did WordStar and Microsoft Word contribute differently to the rise of word processing on personal computers?",
     "reference_answer": "WordStar, developed for CP/M in 1978, was one of the first widely used word processing programs and introduced early examples of features such as cut, copy, and paste. Microsoft Word, launched for MS-DOS in 1983, introduced a graphical user interface and mouse support and later became the industry standard for word processing.",
-    "relevant_children": [
-      {
-        "page_number": 1,
-        "parent_index": 4,
-        "child_index": 1
-      }
-    ]
+    "relevant_chunks": [2]
+  },
+  {
+    "id": "apple_macwrite_graphics",
+    "question": "How did Apple's MacWrite distinguish itself from other early personal computer word processors?",
+    "reference_answer": "MacWrite leveraged the Macintosh computer's graphical capabilities to stand out from other early personal computer word processors.",
+    "relevant_chunks": [3]
+  },
+  {
+    "id": "open_source_word_processors",
+    "question": "What open-source word processing alternatives emerged in the early 2000s?",
+    "reference_answer": "OpenOffice and LibreOffice emerged in the early 2000s as open-source alternatives offering free and flexible word processing options.",
+    "relevant_chunks": [3]
+  },
+  {
+    "id": "google_docs_2006_cloud",
+    "question": "How did the launch of Google Docs in 2006 change word processing collaboration?",
+    "reference_answer": "Google Docs introduced cloud-based word processing that enabled real-time editing and sharing, turning it into a staple for remote teams and collaborative work.",
+    "relevant_chunks": [3]
+  },
+  {
+    "id": "microsoft_office_suite_integration",
+    "question": "How did Microsoft expand Word's dominance in the modern era of computing?",
+    "reference_answer": "Microsoft expanded Word's dominance by bundling and integrating it with other productivity tools such as Excel and PowerPoint inside the Microsoft Office Suite.",
+    "relevant_chunks": [3]
+  },
+  {
+    "id": "latex_academic_technical_writing",
+    "question": "Why did LaTeX gain popularity for academic and technical writing over traditional word processors?",
+    "reference_answer": "LaTeX gained popularity because it focuses on precise formatting for complex mathematical equations, scientific papers, and technical documents using a specialized markup language.",
+    "relevant_chunks": [4]
+  },
+  {
+    "id": "screenwriting_specialized_tools",
+    "question": "What specialized programs were developed for screenwriters, and what do they automate?",
+    "reference_answer": "Tools like Final Draft and Celtx were developed for screenwriters to automate the formatting of dialogue, scene descriptions, and specialized script elements for film and television.",
+    "relevant_chunks": [4]
+  },
+  {
+    "id": "wordperfect_legal_redlining",
+    "question": "Why was WordPerfect preferred by legal professionals, and what capabilities did it offer?",
+    "reference_answer": "WordPerfect was preferred by legal professionals because it offered redlining for version tracking, document comparison, and robust formatting options for contracts and briefs.",
+    "relevant_chunks": [4]
   },
   {
     "id": "word_processing_features",
     "question": "What major features changed how people edited and collaborated on documents from the 1980s onward?",
     "reference_answer": "Major features included Undo and Redo for easier experimentation and error correction, Spell Check and Grammar Check for automatically detecting errors, Templates for reusable document formats, Track Changes for collaborative editing while preserving the original text, and Real-Time Collaboration for multiple users to edit the same document simultaneously.",
-    "relevant_children": [
-      {
-        "page_number": 3,
-        "parent_index": 8,
-        "child_index": 1
-      }
-    ]
+    "relevant_chunks": [5]
+  },
+  {
+    "id": "undo_redo_1980s_introduction",
+    "question": "When was the Undo/Redo capability introduced, and how did it influence writing habits?",
+    "reference_answer": "Undo/Redo was introduced in the 1980s and made experimentation and error correction much easier by allowing writers to reverse mistakes and redo actions.",
+    "relevant_chunks": [5]
+  },
+  {
+    "id": "cultural_impact_accessibility",
+    "question": "How did word processors democratize writing in terms of publishing accessibility?",
+    "reference_answer": "Word processors removed the requirement for expensive publishing equipment and typesetting training, paving the way for self-publishing, blogging, and fan fiction communities.",
+    "relevant_chunks": [6]
+  },
+  {
+    "id": "scrivener_creative_writing",
+    "question": "How does Scrivener assist authors with managing large creative writing projects?",
+    "reference_answer": "Scrivener helps authors manage large projects like novels and screenplays by offering chapter outlines, character notes, and specialized idea organization tools.",
+    "relevant_chunks": [6]
+  },
+  {
+    "id": "post_digital_ai_writing_tools",
+    "question": "How do modern AI-powered tools like Grammarly and ProWritingAid enhance word processors?",
+    "reference_answer": "Modern AI tools analyze writing tone, conciseness, and clarity, and can suggest content improvements, rewrite sentences, or generate full paragraphs.",
+    "relevant_chunks": [6]
+  },
+  {
+    "id": "voice_typing_speech_to_text",
+    "question": "What role does voice typing play in modern word processing accessibility?",
+    "reference_answer": "Voice typing and speech-to-text tools like Dragon NaturallySpeaking make dictation mainstream and make document creation significantly more accessible for individuals with disabilities.",
+    "relevant_chunks": [7]
+  },
+  {
+    "id": "multimedia_document_expansion",
+    "question": "How has word processing evolved beyond simple plain text in modern environments?",
+    "reference_answer": "Modern word processors allow users to embed images, videos, charts, and interactive components, converting plain text into rich multimedia documents.",
+    "relevant_chunks": [7]
+  },
+  {
+    "id": "future_immersive_interfaces",
+    "question": "How might augmented reality (AR) and virtual reality (VR) change the future of word processing?",
+    "reference_answer": "AR and VR could allow users to write and edit in immersive 3D spaces and collaborate in virtual work environments.",
+    "relevant_chunks": [7]
+  },
+  {
+    "id": "word_processor_human_progress",
+    "question": "What does the evolution from clunky typewriters to AI platforms reflect about human progress?",
+    "reference_answer": "It reflects human technological progress by demonstrating how a simple handwriting replacement tool transformed into a collaborative ally for communication and creativity.",
+    "relevant_chunks": [8]
   }
 ]

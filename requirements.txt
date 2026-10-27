@@ -8,7 +8,5 @@ numpy
 pydantic
 pydantic-settings
 python-multipart
-litellm
 docling
-celery[redis]
-ragas
+onnxruntime

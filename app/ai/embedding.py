@@ -3,7 +3,14 @@ from app.core.config import settings
 from sentence_transformers import SentenceTransformer
 
 
-embedding_model = SentenceTransformer(settings.embedding_model)
+embedding_model = SentenceTransformer(
+    settings.embedding_model,
+    backend="onnx",
+    model_kwargs={
+            "file_name": settings.onnx_filename,
+            "provider": "CPUExecutionProvider",
+        }
+    )
 
 
 def create_embeddings(text: list[str]) -> list[list[float]]:

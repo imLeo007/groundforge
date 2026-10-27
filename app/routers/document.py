@@ -1,103 +1,131 @@
-from typing import Annotated
-
-from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, status, Form
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
+from app.core.database import AsyncSessionLocal, get_db
 
-from app.services.pdf_service import save_pdf
+from fastapi import HTTPException, status, BackgroundTasks, Form, UploadFile, File, Depends, APIRouter
 
-from app.services.document import get_all_documents, get_document_by_id, get_document_stats, delete_document, create_document
+from typing import Annotated
 
-from app.tasks.document import process_document
+from app.services.pdf import extract_document, save_pdf
 
-from app.schemas.document import DocumentDeleteResponse, DocumentDetailResponse, DocumentResponse, DocumentUploadResponse
+import os
 
+from app.services.chunker import chunk_document
 
-router = APIRouter(prefix="/document", tags=["Document"])
+from app.services.document import save_document_with_chunks, get_document_chunks, get_document_by_id, get_all_documents, delete_document
 
+from app.ai.embedding import create_embeddings
 
-SessionDB = Annotated[AsyncSession, Depends(get_db)]
-
-
-UPLOAD_DIR = "uploads"
-
-
-# endpoints
+from app.schemas.document import DocumentUploadResponse, DocumentResponse, DocumentDetailResponse, DocumentDeleteResponse
 
 
-@router.post("/upload", response_model=DocumentUploadResponse, status_code=status.HTTP_202_ACCEPTED)
-async def upload_document(
-    db: SessionDB,
-    file: Annotated[UploadFile, File(...)],
-    category: Annotated[str, Form(...)]
-) -> DocumentUploadResponse:
-    if not file.filename:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="file must have filename")
+router = APIRouter(prefix="/documents", tags=["Document"])
 
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="file must be a pdf")
 
+DIR = "uploads"
+
+
+DBSession = Annotated[AsyncSession, Depends(get_db)]
+
+
+FileSession = Annotated[UploadFile, File(...)]
+
+
+FormSession = Annotated[str, Form(...)]
+
+
+
+async def process_backgroundtask(
+    file_path: str,
+    filename: str,
+    category: str,
+) -> None:
     try:
-        file_path = save_pdf(file=file, upload_dir=UPLOAD_DIR)
+        document = extract_document(file_path=file_path)
 
-        document = await create_document(
-            db=db,
-            filename=file.filename,
-            category=category
-        )
+        chunks = chunk_document(document=document)
 
-        task = process_document.delay(
-            document_id=document.id,
-            file_path=file_path,
-        )
+        if not chunks:
+            return
 
-        return DocumentUploadResponse(
-            message="Document queued for processing.",
-            filename=file.filename,
-            category=category,
-            task_id=task.id,
-            document_id=document.id,
-            status=str(document.status)
-        )
+        chunks_text = [chunk["text"] for chunk in chunks]
+
+        embeddings = create_embeddings(chunks_text)
+
+        async with AsyncSessionLocal() as db:
+            await save_document_with_chunks(
+                db=db,
+                filename=filename,
+                category=category,
+                embeddings=embeddings,
+                chunks=chunks,
+            )
 
     finally:
-        await file.close()
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
 
 
-@router.get("", response_model=list[DocumentResponse])
-async def list_documents(db: SessionDB) -> list[DocumentResponse]:
-    documents = await get_all_documents(db=db)
+@router.post("/upload", response_model=DocumentUploadResponse, status_code=status.HTTP_201_CREATED)
+async def upload_document(
+    background_tasks: BackgroundTasks,
+    file: FileSession,
+    category: FormSession,
+) -> DocumentUploadResponse:
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must have a name."
+        )
 
-    return [
-        DocumentResponse.model_validate(document)
-        for document in documents
-    ]
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be a pdf."
+        )
 
+    file_path = save_pdf(file=file, upload_dir=DIR)
 
+    background_tasks.add_task(
+        process_backgroundtask,
+        file_path=file_path,
+        filename=file.filename,
+        category=category
+    )
 
-@router.get("/{document_id}", response_model=DocumentDetailResponse)
-async def get_document(db: SessionDB, document_id: int) -> DocumentDetailResponse:
-    document = await get_document_by_id(db=db, document_id=document_id)
-
-    (total_parent_chunks, total_child_chunks) = await get_document_stats(db=db, document_id=document_id)
-
-    return DocumentDetailResponse(
-        id=document.id,
-        filename=document.filename,
-        status=document.status,
-        category=document.category,
-        created_at=document.created_at,
-        total_child_chunks=total_child_chunks,
-        total_parent_chunks=total_parent_chunks,
+    return DocumentUploadResponse(
+        message="Document was uploaded and is being processed in background.",
+        filename=file.filename,
+        category=category
     )
 
 
 
-@router.delete("/{document_id}", response_model=DocumentDeleteResponse)
-async def remove_document(db: SessionDB, document_id: int) -> DocumentDeleteResponse:
-    result = await delete_document(db=db, document_id=document_id)
+@router.get("", response_model=list[DocumentResponse])
+async def list_documents(db: DBSession) -> list[DocumentResponse]:
+    documents = await get_all_documents(db=db)
 
+    return [DocumentResponse.model_validate(document) for document in documents]
+
+
+@router.get("/{document_id}", response_model=DocumentDetailResponse)
+async def get_document(db: DBSession, document_id: int) -> DocumentDetailResponse:
+    document = await get_document_by_id(db=db, document_id=document_id)
+    
+    chunks = await get_document_chunks(db=db, document_id=document_id)
+
+    return DocumentDetailResponse(
+        id=document.id,
+        filename=document.filename,
+        category=document.category,
+        created_at=document.created_at,
+        total_chunks=len(chunks),
+    )
+
+
+@router.delete("/{document_id}", response_model=DocumentDeleteResponse)
+async def remove_document(db: DBSession, document_id: int) -> DocumentDeleteResponse:
+    result = await delete_document(db=db, document_id=document_id)
+    
     return DocumentDeleteResponse(**result)
