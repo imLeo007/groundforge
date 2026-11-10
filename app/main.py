@@ -12,6 +12,10 @@ from app.ai.reranker import load_reranker
 
 from app.ai.embedding import create_question_embeddings
 
+from pathlib import Path
+
+from app.services.pdf import warm_docling
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -22,9 +26,17 @@ async def lifespan(app: FastAPI):
 
     print("\nReranker is loaded:", perf_counter() - start, "\n")
 
-    question = "example question"
+    start = perf_counter()
+
+    path = Path("uploads/sample.pdf").resolve()
+
+    warm_docling(path)
+
+    print("\nDocling is loaded:", perf_counter() - start, "\n")
 
     start = perf_counter()
+
+    question = "example question"
 
     create_question_embeddings(question)
 

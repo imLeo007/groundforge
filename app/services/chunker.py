@@ -5,9 +5,7 @@ from docling_core.types import DoclingDocument
 from app.schemas.retriever import Chunk
 
 
-
 hybrid_chunker = HybridChunker()
-
 
 
 def get_chunk_page(chunk) -> int:

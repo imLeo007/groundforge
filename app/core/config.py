@@ -8,10 +8,11 @@ class Settings(BaseSettings):
     database_url: str
 
     embedding_model: str
+    
     reranker_model: str
-    onnx_filename: str
 
     openai_api_key: str
+
     openai_model: str
 
     model_config = SettingsConfigDict(

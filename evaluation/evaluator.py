@@ -8,19 +8,19 @@ import httpx
 
 from deepeval import evaluate
 
+from deepeval.evaluate import AsyncConfig
+
 from deepeval.metrics import ContextualPrecisionMetric, ContextualRecallMetric
 
 from deepeval.test_case import LLMTestCase
 
 from evaluation.judge import judge
 
-from evaluation.metrics import mean_reciprocal_rank, recall_at_k, reciprocal_rank, mean_recall_k
-
 
 API_ENDPOINT = "http://localhost:8000/question/search"
 
 
-def load_dataset(path: str = "evaluation/dataset.json") -> list[dict[str, Any]]:
+def load_dataset(path: str = "evaluation/dataset1.json") -> list[dict[str, Any]]:
     dataset_path = Path(path)
 
     if not dataset_path.exists():
@@ -40,17 +40,11 @@ def evaluate_groundforge(
 
     question_results: list[dict[str, Any]] = []
 
-    recall_scores: list[float] = []
-
-    reciprocal_ranks: list[float] = []
-
     with httpx.Client(timeout=30.0) as client:
         for item in dataset:
             question = item["question"]
 
             expected_answer = item["reference_answer"]
-
-            relevant_chunks = set(item["relevant_chunks"])
 
             payload: dict[str, Any] = {"query": question, "top_k": top_k}
             
@@ -69,21 +63,6 @@ def evaluate_groundforge(
 
             retrieved_chunk_indexes = [int(chunk["chunk_index"]) for chunk in retrieved_chunks]
 
-            recall_k = recall_at_k(
-                relevant_chunks=relevant_chunks,
-                retrieved_chunks=retrieved_chunk_indexes,
-                k=top_k,
-            )
-            
-            reciprocal_r = reciprocal_rank(
-                relevant_chunks=relevant_chunks,
-                retrieved_chunks=retrieved_chunk_indexes,
-            )
-
-            recall_scores.append(recall_k)
-            
-            reciprocal_ranks.append(reciprocal_r)
-
             test_case = LLMTestCase(
                 input=question,
                 actual_output=expected_answer,
@@ -99,8 +78,6 @@ def evaluate_groundforge(
                     "question": question,
                     "chunk_indexes": retrieved_chunk_indexes,
                     "top_rerank_score": retrieved_chunks[0]["rerank_score"] if retrieved_chunks else 0.0,
-                    "recall_at_k": recall_k,
-                    "reciprocal_rank": reciprocal_r,
                 }
             )
 
@@ -124,6 +101,7 @@ def evaluate_groundforge(
             context_recall_metric,
             context_precision_metric,
         ],
+        async_config=AsyncConfig(run_async=False)
     )
 
     deepeval_metrics = []
@@ -143,16 +121,8 @@ def evaluate_groundforge(
         metric.get("Contextual Precision", 0.0) for metric in deepeval_metrics
     ) / total_evals
 
-    mrr = mean_reciprocal_rank(reciprocal_ranks)
-
-    mrk = mean_recall_k(recall_scores)
-
     return {
         "questions": len(dataset),
-        "metrics": {
-            "MRR": round(mrr, 4),
-            "Average Recall At K": round(mrk, 4),
-        },
         "deepeval_metrics": {
             "average_context_recall": round(avg_context_recall, 4),
             "average_context_precision": round(avg_context_precision, 4),

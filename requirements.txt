@@ -1,6 +1,6 @@
 fastapi
 uvicorn[standard]
-sqlalchemy
+sqlalchemy[asyncio]
 asyncpg
 pgvector
 alembic
@@ -9,4 +9,5 @@ pydantic
 pydantic-settings
 python-multipart
 docling
+sentence-transformers
 onnxruntime

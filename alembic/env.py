@@ -6,11 +6,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.models.document import Document
-from app.models.parentchunks import ParentChunks
-from app.models.childchunks import ChildChunks
-from app.models.conversation import Conversation
-from app.models.message import Message
-
+from app.models.chunks import Chunks
 
 from app.core.database import Base
 

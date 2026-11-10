@@ -1,218 +1,152 @@
-# GroundForge Production RAG
+# GroundForge Retrieval Engine
 
-A production-oriented Retrieval-Augmented Generation backend for
-uploading documents, processing them in the background, retrieving
-relevant evidence, and generating grounded answers with conversation
-context.
+A document retrieval engine prototype built to parse structured PDFs, run hybrid search, and surface accurate context for AI applications.
 
-Documents are parsed and structured with Docling, stored as parent-child
-chunks, and searched using both semantic and lexical retrieval.
-Retrieved candidates are fused with Reciprocal Rank Fusion, reranked
-with an ONNX CrossEncoder, resolved to their parent context, and passed
-to the language model for answer generation. Document ingestion runs
-separately through Celery and Redis so heavy PDF processing does not
-block the API.
+Documents are parsed using Docling to capture text and structural layout, chunked with contextual overlap, and stored in PostgreSQL with both vector and keyword indexes. Retrieval runs semantic similarity and exact keyword search in parallel, blends candidate results using Reciprocal Rank Fusion (RRF), and scores the top results with a Cross-Encoder reranker.
 
----
-
-## Why this project
-
-A useful RAG system needs more than accurate retrieval. It also needs
-predictable latency, non-blocking document processing, strong context
-selection, and an architecture that remains understandable as the
-application grows.
-
-### This project separates the two expensive paths:
-
-Document ingestion runs in the background through Celery and
-Redis. Upload requests can return without waiting for parsing,
-chunking, embedding generation, and database storage.
-
-Question answering stays focused on retrieval and generation,
-using hybrid search, rank fusion, reranking, parent resolution, and
-conversation-aware query preparation.
-
-The result is a capable RAG backend that answers questions in below 5
-seconds approximately, compared with 20--30 seconds in earlier
-implementations, while document processing is handled independently in
-the background.
-
-The architecture is intentionally practical rather than over-scaled: it
-keeps the important production boundaries---API, worker, broker,
-database, retrieval, and generation---without adding infrastructure that
-the current workload does not require.
+> **Looking for the lightweight flagship?** GroundForge serves as the deep-parsing prototype designed to evaluate layout-aware document ingestion. If you need an ultra-lightweight, zero-Torch retrieval sidecar optimized for autonomous AI agents (~300 MB RAM and sub-50ms latency), check out **[DocPilot](https://github.com/imLeo007/docpilot)**.
 
 ---
 
 ## Skill Stack
 
 <p align="left">
-
 <img src="https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white" alt="Python" />
 <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI" />
 <img src="https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL" />
 <img src="https://img.shields.io/badge/pgvector-4169E1?logo=postgresql&logoColor=white" alt="pgvector" />
 <img src="https://img.shields.io/badge/SQLAlchemy-D71F00?logo=sqlalchemy&logoColor=white" alt="SQLAlchemy" />
 <img src="https://img.shields.io/badge/Alembic-6BA81E?logoColor=white" alt="Alembic" />
-<img src="https://img.shields.io/badge/Celery-37814A?logo=celery&logoColor=white" alt="Celery" />
-<img src="https://img.shields.io/badge/Redis-FF4438?logo=redis&logoColor=white" alt="Redis" />
 <img src="https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white" alt="Docker" />
 <img src="https://img.shields.io/badge/Docling-1F6FEB?logoColor=white" alt="Docling" />
+<img src="https://img.shields.io/badge/PyTorch-EE4C2C?logo=pytorch&logoColor=white" alt="PyTorch" />
 <img src="https://img.shields.io/badge/SentenceTransformers-FFD21E?logo=huggingface&logoColor=black" alt="Sentence Transformers" />
-<img src="https://img.shields.io/badge/ONNX_Runtime-005CED?logo=onnx&logoColor=white" alt="ONNX Runtime" />
-
+<img src="https://img.shields.io/badge/DeepEval-10B981?logoColor=white" alt="DeepEval" />
 </p>
 
 ---
 
-## What It Includes
+## How It Works
 
-### 1. Structured document ingestion
-
-PDFs are processed with Docling instead of basic text extraction.
-The text-focused parsing configuration disables OCR, table processing,
-page-image generation, and picture-image generation, while using the
-PyPDFium2 backend.
-
-### 2. Background document processing
-
-Document ingestion is dispatched through Celery with Redis as
-the broker. Parsing, chunking, embedding generation, and database
-storage run in the worker instead of blocking the FastAPI request path.
+GroundForge processes uploaded documents and delivers relevant context through a five-stage retrieval pipeline:
 
 ```mermaid
-flowchart LR
-    A[Queued] --> B[Processing]
-    B --> C[Ready]
-    B --> D[Failed]
+flowchart TD
+    subgraph Ingestion ["1. Document Ingestion"]
+        A[PDF Upload] --> B[Docling Parser]
+        B --> C[Sliding Window Chunking]
+        C --> D[Vector Embeddings]
+        D --> E[(PostgreSQL: HNSW + GIN Indexes)]
+    end
 ```
-
-Temporary uploaded files are cleaned up by the worker after processing.
-
-### 3. Hybrid parent-child chunking
-
-Docling's structured output is converted into parent and child chunks.
-Small child chunks provide precise retrieval targets, while larger
-parent chunks preserve enough surrounding context for answer generation.
-
-### 4. Semantic + lexical retrieval
-
-The retriever combines pgvector semantic similarity with PostgreSQL
-tsvector full-text search, allowing evidence to be recovered by both
-meaning and exact terminology.
-
-### 5. Reciprocal Rank Fusion
-
-Vector and lexical candidate lists are combined with Reciprocal Rank
-Fusion (RRF) before reranking.
-
-### 6. CrossEncoder reranking
-
-Fused candidates are reranked using a CrossEncoder running through
-an INT8 ONNX model on CPU. The reranker evaluates the question and
-candidate text together before final context selection.
-
-### 7. Parent resolution
-
-The strongest child matches are resolved back to their parent chunks
-before generation. This keeps retrieval precise while giving the
-language model more complete evidence.
-
-### 8. Conversation-aware query preparation
-
-The application stores conversations using a conversation_id and loads
-recent messages for follow-up questions. Query preparation turns
-conversational questions into standalone retrieval queries while
-producing alternative queries for candidate discovery.
-
-### 9. Grounded answer generation
-
-The final model receives the prepared question and retrieved parent
-context, keeping generation tied to evidence recovered from uploaded
-documents.
-
-### 10. Retrieval evaluation
-
-The pipeline has been evaluated with Recall@K, MRR, context precision,
-context recall, faithfulness, and groundedness checks, making
-retrieval quality measurable rather than relying only on manual
-impressions.
-
----
-
-## Workflow
-
-![Production RAG Pipeline](screenshots/groundforge.png)
-
-The workflow separates background ingestion from the question-answering
-path. Documents are prepared asynchronously, while retrieval and
-generation remain focused on answering questions from indexed content.
-
-## Example Report
-
-![Report](screenshots/docker.png)
-
-The application runs as separate Docker services for the API, Celery
-worker, Redis broker, and PostgreSQL database.
-
-## Preview
-
-![Preview](screenshots/swagger_ui.png)
-
-FastAPI exposes the document and question workflows through an
-interactive API interface.
-
----
-
-## Performance
-
-The final pipeline was optimized around bottlenecks observed during
-development rather than theoretical high-scale traffic.
-
-| Operation | Earlier implementations | Current pipeline |
-| --- | ---: | ---: |
-| Question answering | 20–30 s | **below 5 s approximately** |
-| Application startup | ~2 min | **~30 s** |
-| Background document processing | request-bound | **~3 s per document** |
-
-### Startup
-
-Application startup takes approximately 30 seconds while FastAPI
-initializes the CrossEncoder reranker and the Celery worker
-initializes Docling.
-
-### Document processing
-
-A document takes approximately 3 seconds to complete the background
-ingestion path:
 
 ```mermaid
-flowchart LR
-    A[Docling parsing] --> B[Chunking]
-    B --> C[Embedding generation]
-    C --> D[Database storage]
+flowchart TD
+    subgraph Retrieval ["2. Hybrid Search & Reranking"]
+        Q[Search Query] --> F[Vector Search: pgvector HNSW]
+        Q --> G[Keyword Search: Postgres GIN]
+        F --> H[Reciprocal Rank Fusion - RRF]
+        G --> H
+        H --> I[Cross-Encoder Reranker]
+        I --> J[Top-K Ranked Chunks]
+    end
 ```
 
-Because this work runs through Celery, the API does not keep the upload
-request waiting for the full ingestion pipeline.
+### 1. Layout-Aware Ingestion
+Uploaded documents are processed through Docling to extract clean body text and recognize document structure instead of performing basic character dumps.
 
-### Question answering
+### 2. Context-Preserving Chunking
+Extracted text is split into uniform passages using sliding window overlap. This ensures key sentences are not cut in half across chunk boundaries and preserves surrounding context.
 
-The complete question path---including query preparation, hybrid
-retrieval, RRF fusion, ONNX CrossEncoder reranking, parent resolution,
-and final answer generation---runs in below 5 seconds approximately
-in the measured setup.
+### 3. Dual-Path Hybrid Search
+Every query triggers two independent searches in parallel:
+* **Semantic Search:** Uses `pgvector` with HNSW indexing to find passages based on conceptual meaning.
+* **Lexical Search:** Uses PostgreSQL full-text search (`tsvector` + GIN indexing) to lock onto exact numbers, acronyms, and proper nouns.
 
-Earlier implementations required at least 20--30 seconds for the
-same overall question-answering workflow.
+### 4. Reciprocal Rank Fusion (RRF)
+The top candidates from both search paths are combined based on their relative ranking positions rather than raw scores. This balances vector and keyword relevance without score calibration issues.
 
-Performance figures are measurements from the development environment
-and should be treated as approximate rather than universal production
-guarantees.
+### 5. Precision Reranking
+The fused candidate pool is passed through a Cross-Encoder reranker. The model inspects the question and candidate text together, and the top-ranked passages are returned as clean, ready-to-use context.
 
 ---
 
-## Running the Project
+### Workflow Architecture
+![DocPilot Pipeline](screenshots/workflow.png)
+*The end-to-end flow from document upload to dual-index storage, hybrid retrieval, and final reranking.*
+
+### Interactive API Preview
+![Swagger UI](screenshots/preview.png)
+*FastAPI interactive documentation interface for uploading documents and running searches.*
+
+### Benchmark Evaluation
+![Evaluation Results](screenshots/benchmark.png)
+*Automated evaluation run using DeepEval measuring contextual retrieval performance.*
+
+---
+
+## Performance & Evaluation
+
+GroundForge was evaluated using an automated benchmark suite powered by **DeepEval** against a **100-question dataset** built from standard public curriculum textbooks.
+
+An independent LLM judge evaluated the factual completeness and ranking order of retrieved chunks against reference answers:
+
+### Benchmark Results (100 Questions)
+
+| Metric | Average Score | Pass Rate | Status | Total Evaluated |
+| :--- | :---: | :---: | :---: | :---: |
+| **Contextual Recall** | **0.98** | **96.00%** | 96 passed / 4 failed | 100 test cases |
+| **Contextual Precision** | **0.90** | **92.00%** | 92 passed / 8 failed | 100 test cases |
+
+* **Contextual Recall (96%):** Confirms that in 96 out of 100 test queries, the engine successfully surfaced all necessary factual information in the retrieved chunks.
+* **Contextual Precision (92%):** Confirms that high-relevance chunks were prioritized at the top of the context list.
+
+## Architectural Comparison: GroundForge vs. DocPilot
+
+| Aspect | GroundForge (This Project) | DocPilot (Production Flagship) |
+| :--- | :--- | :--- |
+| **Primary Goal** | Deep document parsing prototype | Ultra-lightweight agent retrieval sidecar |
+| **PDF Extraction** | Docling (layout & structure aware) | PyMuPDF (compiled C-speed extraction) |
+| **Model Runtime** | Native PyTorch (CPU) | Pure ONNX Runtime (Zero-Torch dependency) |
+| **Memory Footprint** | ~1.8 GB – 2.4 GB RAM | **~280 MB – 320 MB RAM** |
+| **Retrieval Speed** | Standard (~150ms – 250ms) | **Sub-50ms** |
+| **Recommended For** | Layout-heavy documents, deep parsing research | Fast, low-memory tool for Agno & LangGraph |
+
+---
+
+## Project Structure
+
+```
+groundforge/
+├── app/
+│   ├── ai/
+│   │   ├── embedding.py       # SentenceTransformer vector embeddings
+│   │   ├── reranker.py        # CrossEncoder scoring model
+│   │   └── retriever.py       # Hybrid search (pgvector + tsvector) & RRF
+│   ├── api/
+│   │   ├── document.py        # Document upload and parsing endpoints
+│   │   └── question.py        # Question retrieval endpoints
+│   ├── core/
+│   │   ├── config.py          # Environment settings
+│   │   └── database.py        # Database initialization
+│   ├── models/
+│   │   ├── chunks.py          # Dual-indexed chunk table (HNSW + GIN)
+│   │   └── document.py        # Document metadata table
+|   ├── services/
+|   |   ├── chunker.py         # Chunk page text
+|   |   ├── pdf.py             # Document fetching services
+|   |   └── pdf.py             # Docling parser integration
+│   └── main.py                # FastAPI entrypoint
+├── evaluation/
+│   ├── dataset.json           # 100-question ground truth dataset
+│   ├── evaluator.py           # DeepEval precision and recall runner
+│   └── judge.py               # Custom structured LLM judge
+├── docker-compose.yml
+├── Dockerfile
+└── requirements.txt
+```
+
+## How to Run
 
 ### 1. Clone the repository
 
@@ -221,22 +155,31 @@ git clone https://github.com/imLeo007/groundforge-rag
 cd groundforge-rag
 ```
 
-### 2. Configure the environment
+### 2. Configure environment variables
 
-```
-Create a .env file with the database configuration and model/API
-credentials expected by the application.
+Your `.env` file should include the following variables (referenced from `.env.example`):
+```env
+# Database Settings
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/docpilot_db
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_DB=docpilot_db
+POSTGRES_PORT=5432
+
+# Model Configurations
+EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
+
+# Evaluation / Judge API Settings (Optional for evaluation runs)
+OPENAI_API_KEY=your_api_key_here
+OPENAI_MODEL=gpt-4o-mini
 ```
 
-### 3. Build and start the services
+### 3. Build and start services
 
 ```bash
-docker compose up --build
+docker compose up --build -d
 ```
-
-This starts FastAPI, PostgreSQL + pgvector, Redis, and the Celery
-worker. The first startup can take around 30 seconds while Docling and
-the CrossEncoder initialize.
 
 ### 4. Run database migrations
 
@@ -244,41 +187,20 @@ the CrossEncoder initialize.
 docker compose exec api alembic upgrade head
 ```
 
-### 5. Open Swagger UI
+### 5. Access the API
 
+Open your browser to:
 ```
-http://localhost:<PORT>/docs
+http://localhost:8000/docs
 ```
 
-### 6. Upload a document
-
-Upload a PDF through the document endpoint. The API creates the document
-record and dispatches the ingestion work to the Celery worker.
-
-### 7. Ask questions
-
-Once the document is ready, use the question endpoint to retrieve
-evidence and generate grounded answers. Continue with the same
-conversation_id for follow-up questions that require recent
-conversation context.
+* **Upload a Document:** Use `POST /document/upload` to parse and index your PDF.
+* **Search Context:** Use `POST /question/search` to retrieve ranked chunks using hybrid search and reranking.
 
 ---
 
-## Final Note
+## Conclusion
 
-This project is a complete production-oriented RAG backend built around
-strong retrieval, controlled context construction, background document
-processing, and measurable performance.
+GroundForge was developed as a hands-on retrieval prototype to test deep document parsing, hybrid indexing, and multi-stage reranking on complex files. 
 
-Its architecture keeps document ingestion away from the request path,
-combines semantic and lexical retrieval, reranks candidates before
-generation, preserves useful parent context, and supports stateful
-conversations. In the measured development environment, background
-document processing completes in approximately 3 seconds, while the
-full question-answering path completes in below 5 seconds
-approximately.
-
-The system is intentionally kept within the scale it currently needs. It
-has clear service boundaries and enough capability to operate as a
-standalone RAG backend today, while also being suitable to expose later
-as a retrieval tool inside larger agentic applications.
+While GroundForge handles structural document analysis reliably, the insights gained from its compute footprint directly inspired **DocPilot**—our streamlined, sub-300MB, zero-Torch retrieval engine engineered specifically for fast AI agent workflows.

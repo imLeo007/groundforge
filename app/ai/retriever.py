@@ -81,7 +81,7 @@ async def retrieve_keyword_chunks(
     if not tokens:
         return []
 
-    tsquery = func.websearch_to_tsquery("english", " ".join(tokens))
+    tsquery = func.websearch_to_tsquery("english", " OR ".join(tokens))
 
     keyword_score = func.ts_rank_cd(Chunks.search_vector, tsquery).label("keyword_score")
 

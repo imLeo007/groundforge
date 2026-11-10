@@ -23,12 +23,18 @@ env/
 .pytest_cache/
 .coverage/
 .coverage.*
+.deepeval/
 htmlcov/
 
 # Type checking and linting
 
 .mypy_cache/
 .ruff_cache/
+
+# Extras
+
+uploads/
+dataset1.json
 
 # Build artifacts
 
@@ -40,6 +46,8 @@ dist/
 
 uploads/
 *.pdf
+
+.deepeval/
 
 # IDE settings
 
