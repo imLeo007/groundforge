@@ -14,7 +14,6 @@ Documents are parsed using Docling to capture text and structural layout, chunke
 <img src="https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white" alt="Python" />
 <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI" />
 <img src="https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL" />
-<img src="https://img.shields.io/badge/pgvector-4169E1?logo=postgresql&logoColor=white" alt="pgvector" />
 <img src="https://img.shields.io/badge/SQLAlchemy-D71F00?logo=sqlalchemy&logoColor=white" alt="SQLAlchemy" />
 <img src="https://img.shields.io/badge/Alembic-6BA81E?logoColor=white" alt="Alembic" />
 <img src="https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white" alt="Docker" />
@@ -31,7 +30,7 @@ Documents are parsed using Docling to capture text and structural layout, chunke
 GroundForge processes uploaded documents and delivers relevant context through a five-stage retrieval pipeline:
 
 ```mermaid
-flowchart TD
+flowchart LR
     subgraph Ingestion ["1. Document Ingestion"]
         A[PDF Upload] --> B[Docling Parser]
         B --> C[Sliding Window Chunking]
@@ -41,7 +40,7 @@ flowchart TD
 ```
 
 ```mermaid
-flowchart TD
+flowchart LR
     subgraph Retrieval ["2. Hybrid Search & Reranking"]
         Q[Search Query] --> F[Vector Search: pgvector HNSW]
         Q --> G[Keyword Search: Postgres GIN]
@@ -134,7 +133,7 @@ groundforge/
 │   │   └── document.py        # Document metadata table
 |   ├── services/
 |   |   ├── chunker.py         # Chunk page text
-|   |   ├── pdf.py             # Document fetching services
+|   |   ├── document.py             # Document fetching services
 |   |   └── pdf.py             # Docling parser integration
 │   └── main.py                # FastAPI entrypoint
 ├── evaluation/
